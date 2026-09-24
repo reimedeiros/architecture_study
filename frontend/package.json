@@ -1,8 +1,9 @@
 {
   "name": "frontend",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "scripts": {
     "ng": "ng",
+    "build:docker": "tsx scripts/docker-build.ts",
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
@@ -24,8 +25,10 @@
     "@angular/build": "^21.2.24",
     "@angular/cli": "^21.2.24",
     "@angular/compiler-cli": "^21.2.0",
+    "@types/node": "^26.6.2",
     "jsdom": "^28.0.0",
     "prettier": "^3.8.1",
+    "tsx": "^4.23.15",
     "typescript": "~5.9.2",
     "vitest": "^4.0.8"
   }

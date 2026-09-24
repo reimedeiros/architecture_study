@@ -13,9 +13,9 @@ on:
       - master
       - develop
 
-  permissions:
-    contents: read
-    packages: write
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   backend:
@@ -90,7 +90,7 @@ jobs:
       - name: Build backend image
         run: |
           docker build \
-            -t architecture-study-backend:${{ github.sha }} \
+            -t ghcr.io/${{ github.repository_owner }}/architecture-study-backend:${{ github.sha }} \
             ./backend
 
       - name: Push backend image
@@ -101,7 +101,7 @@ jobs:
       - name: Build frontend image
         run: |
           docker build \
-            -t architecture-study-frontend:${{ github.sha }} \
+            -t ghcr.io/${{ github.repository_owner }}/architecture-study-frontend:${{ github.sha }} \
             ./frontend
 
       - name: Push frontend image

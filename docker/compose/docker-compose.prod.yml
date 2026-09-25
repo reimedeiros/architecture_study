@@ -31,7 +31,7 @@ services:
 
 
   frontend:
-    image: ghcr.io/reimedeiros/architecture-study-frontend:${APP_VERSION}
+    image: ghcr.io/reimedeiros/architecture-study-frontend:latest
     container_name: architecture-study-frontend
     restart: unless-stopped
 
@@ -49,12 +49,14 @@ services:
       - "traefik.http.routers.frontend.entrypoints=websecure"
       - "traefik.http.routers.frontend.tls=true"
       - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
-
       - "traefik.http.services.frontend.loadbalancer.server.port=80"
+
+    environment:
+      API_URL: https://api.mavien.com.br
 
 
   backend:
-    image: ghcr.io/reimedeiros/architecture-study-backend:${APP_VERSION}
+    image: ghcr.io/reimedeiros/architecture-study-backend:latest
     container_name: architecture-study-backend
     restart: unless-stopped
 
@@ -70,9 +72,10 @@ services:
     depends_on:
       database:
         condition: service_healthy
-        
+
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=architecture-study-proxy"
       - "traefik.http.routers.backend.rule=Host(`${BACKEND_DOMAIN}`)"
       - "traefik.http.routers.backend.entrypoints=websecure"
       - "traefik.http.routers.backend.tls=true"

@@ -5,13 +5,11 @@ on:
     branches:
       - main
       - master
-      - develop
 
   pull_request:
     branches:
       - main
       - master
-      - develop
 
 permissions:
   contents: read
@@ -91,6 +89,7 @@ jobs:
         run: |
           docker build \
             -t ghcr.io/${{ github.repository_owner }}/architecture-study-backend:${{ github.sha }} \
+            -t ghcr.io/${{ github.repository_owner }}/architecture-study-backend:latest \
             ./backend
 
       - name: Push backend image
@@ -98,13 +97,20 @@ jobs:
           docker push \
             ghcr.io/${{ github.repository_owner }}/architecture-study-backend:${{ github.sha }}
 
+          docker push \
+            ghcr.io/${{ github.repository_owner }}/architecture-study-backend:latest
+
       - name: Build frontend image
         run: |
           docker build \
             -t ghcr.io/${{ github.repository_owner }}/architecture-study-frontend:${{ github.sha }} \
+            -t ghcr.io/${{ github.repository_owner }}/architecture-study-frontend:latest \
             ./frontend
 
       - name: Push frontend image
         run: |
           docker push \
             ghcr.io/${{ github.repository_owner }}/architecture-study-frontend:${{ github.sha }}
+
+          docker push \
+            ghcr.io/${{ github.repository_owner }}/architecture-study-frontend:latest

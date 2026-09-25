@@ -4,13 +4,21 @@ import { Observable } from 'rxjs';
 import { HealthResponse } from './interfaces/health_response.interface';
 import { ReadyResponse } from './interfaces/ready_response.interface';
 
+declare global {
+  interface Window {
+    __env: {
+      API_URL: string;
+    };
+  }
+}
+
 @Injectable({
   providedIn: 'root',
 })
 export class BackendService {
   private readonly http = inject(HttpClient);
 
-  private readonly apiUrl = 'http://localhost:3000';
+  private readonly apiUrl = window.__env.API_URL;
 
   health(): Observable<HealthResponse> {
     return this.http.get<HealthResponse>(`${this.apiUrl}/health`);

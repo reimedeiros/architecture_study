@@ -1,32 +1,22 @@
 name: CI/CD
 
 on:
-  push:
-    branches:
-      - main
-
   pull_request:
     branches:
       - main
 
-permissions:
-  contents: read
-  packages: write
+  push:
+    branches:
+      - main
 
 jobs:
   backend:
     name: Backend
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: backend
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -36,24 +26,20 @@ jobs:
           cache-dependency-path: backend/package-lock.json
 
       - name: Install dependencies
+        working-directory: backend
         run: npm ci
 
       - name: Build
+        working-directory: backend
         run: npm run build
 
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: frontend
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -63,9 +49,11 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
+        working-directory: frontend
         run: npm ci
 
       - name: Build
+        working-directory: frontend
         run: npm run build
 
   docker:
@@ -81,8 +69,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
 
       - name: Validate versions
         id: versions
@@ -93,29 +79,8 @@ jobs:
           BACKEND_VERSION=$(node -p "require('./backend/package.json').version")
           FRONTEND_VERSION=$(node -p "require('./frontend/package.json').version")
 
-          PREVIOUS_BACKEND_VERSION=$(git show HEAD^:backend/package.json | node -e "
-            let data = '';
-            process.stdin.on('data', chunk => data += chunk);
-            process.stdin.on('end', () => console.log(JSON.parse(data).version));
-          ")
-
-          PREVIOUS_FRONTEND_VERSION=$(git show HEAD^:frontend/package.json | node -e "
-            let data = '';
-            process.stdin.on('data', chunk => data += chunk);
-            process.stdin.on('end', () => console.log(JSON.parse(data).version));
-          ")
-
-          echo "Backend:"
-          echo "  Previous: $PREVIOUS_BACKEND_VERSION"
-          echo "  Current:  $BACKEND_VERSION"
-
-          echo "Frontend:"
-          echo "  Previous: $PREVIOUS_FRONTEND_VERSION"
-          echo "  Current:  $FRONTEND_VERSION"
-
-          # -----------------------------------------
-          # Validar formato MAJOR.MINOR.PATCH
-          # -----------------------------------------
+          echo "Backend version: $BACKEND_VERSION"
+          echo "Frontend version: $FRONTEND_VERSION"
 
           if [[ ! "$BACKEND_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::Backend version '$BACKEND_VERSION' is not a closed version. Use MAJOR.MINOR.PATCH, for example 1.2.3."
@@ -127,26 +92,7 @@ jobs:
             exit 1
           fi
 
-          # -----------------------------------------
-          # Verificar se as versões foram alteradas
-          # -----------------------------------------
-
-          if [[ "$BACKEND_VERSION" == "$PREVIOUS_BACKEND_VERSION" ]]; then
-            echo "::error::Backend version was not changed. Current version: $BACKEND_VERSION"
-            exit 1
-          fi
-
-          if [[ "$FRONTEND_VERSION" == "$PREVIOUS_FRONTEND_VERSION" ]]; then
-            echo "::error::Frontend version was not changed. Current version: $FRONTEND_VERSION"
-            exit 1
-          fi
-
-          # -----------------------------------------
-          # Exportar versões
-          # -----------------------------------------
-
           echo "backend_version=$BACKEND_VERSION" >> "$GITHUB_OUTPUT"
-
           echo "frontend_version=$FRONTEND_VERSION" >> "$GITHUB_OUTPUT"
 
           echo "Version validation passed."
@@ -163,22 +109,29 @@ jobs:
           BACKEND_VERSION: ${{ steps.versions.outputs.backend_version }}
           FRONTEND_VERSION: ${{ steps.versions.outputs.frontend_version }}
         run: |
+          set -e
+
           BACKEND_IMAGE="ghcr.io/${{ github.repository_owner }}/architecture-study-backend"
           FRONTEND_IMAGE="ghcr.io/${{ github.repository_owner }}/architecture-study-frontend"
 
           echo "Checking backend image..."
+
           if docker manifest inspect "$BACKEND_IMAGE:$BACKEND_VERSION" > /dev/null 2>&1; then
             echo "::error::Backend image version $BACKEND_VERSION already exists: $BACKEND_IMAGE:$BACKEND_VERSION"
             exit 1
           fi
 
+          echo "Backend version $BACKEND_VERSION is available."
+
+
           echo "Checking frontend image..."
+
           if docker manifest inspect "$FRONTEND_IMAGE:$FRONTEND_VERSION" > /dev/null 2>&1; then
             echo "::error::Frontend image version $FRONTEND_VERSION already exists: $FRONTEND_IMAGE:$FRONTEND_VERSION"
             exit 1
           fi
 
-          echo "Versions are available."
+          echo "Frontend version $FRONTEND_VERSION is available."
 
       - name: Build backend image
         env:
@@ -189,6 +142,15 @@ jobs:
             -t ghcr.io/${{ github.repository_owner }}/architecture-study-backend:latest \
             ./backend
 
+      - name: Build frontend image
+        env:
+          FRONTEND_VERSION: ${{ steps.versions.outputs.frontend_version }}
+        run: |
+          docker build \
+            -t ghcr.io/${{ github.repository_owner }}/architecture-study-frontend:$FRONTEND_VERSION \
+            -t ghcr.io/${{ github.repository_owner }}/architecture-study-frontend:latest \
+            ./frontend
+
       - name: Push backend image
         env:
           BACKEND_VERSION: ${{ steps.versions.outputs.backend_version }}
@@ -198,15 +160,6 @@ jobs:
 
           docker push \
             ghcr.io/${{ github.repository_owner }}/architecture-study-backend:latest
-
-      - name: Build frontend image
-        env:
-          FRONTEND_VERSION: ${{ steps.versions.outputs.frontend_version }}
-        run: |
-          docker build \
-            -t ghcr.io/${{ github.repository_owner }}/architecture-study-frontend:$FRONTEND_VERSION \
-            -t ghcr.io/${{ github.repository_owner }}/architecture-study-frontend:latest \
-            ./frontend
 
       - name: Push frontend image
         env:
@@ -235,12 +188,15 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+
           script: |
+            set -e
+
             cd /opt/architecture-study
 
             docker compose \
               -f docker-compose.prod.yml \
-              pull frontend backend 
+              pull frontend backend
 
             docker compose \
               -f docker-compose.prod.yml \

@@ -1,4 +1,3 @@
-```yaml
 name: CI/CD
 
 on:
@@ -11,10 +10,10 @@ on:
     branches:
       - main
       - develop
-      - 'feat/**'
-      - 'feature/**'
-      - 'fix/**'
-      - 'hotfix/**'
+      - "feat/**"
+      - "feature/**"
+      - "fix/**"
+      - "hotfix/**"
 
 permissions:
   contents: read
@@ -686,4 +685,3 @@ jobs:
             grep -E \
               '^(BACKEND_VERSION|FRONTEND_VERSION)=' \
               .env
-```

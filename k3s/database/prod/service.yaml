@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: database
+  namespace: architecture-study-database-prod
+  labels:
+    app: database
+    environment: prod
+
+spec:
+  type: ClusterIP
+
+  selector:
+    app: database
+
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+      protocol: TCP

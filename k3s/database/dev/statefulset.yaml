@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: database
+  namespace: architecture-study-database-dev
+  labels:
+    app: database
+    environment: dev
+
+spec:
+  serviceName: database
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: database
+
+  template:
+    metadata:
+      labels:
+        app: database
+        environment: dev
+
+    spec:
+      containers:
+        - name: database
+          image: mysql:8.4
+
+          ports:
+            - containerPort: 3306
+              protocol: TCP
+
+          env:
+            - name: MYSQL_DATABASE
+              value: architecture_study
+
+            - name: MYSQL_USER
+              value: architecture_study
+
+            - name: MYSQL_PASSWORD
+              value: CHANGE_ME
+
+            - name: MYSQL_ROOT_PASSWORD
+              value: CHANGE_ME_ROOT
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+
+          volumeMounts:
+            - name: database-storage
+              mountPath: /var/lib/mysql
+
+  volumeClaimTemplates:
+    - metadata:
+        name: database-storage
+
+      spec:
+        accessModes:
+          - ReadWriteOnce
+
+        resources:
+          requests:
+            storage: 10Gi

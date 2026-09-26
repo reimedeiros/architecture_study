@@ -5,6 +5,9 @@ services:
       context: ../../frontend
     ports:
       - "8080:80"
+    environment:
+      - API_URL=http://localhost:3000
+
     depends_on:
       backend:
         condition: service_healthy

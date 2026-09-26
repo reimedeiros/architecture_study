@@ -64,6 +64,14 @@ jobs:
     name: Docker Build
     runs-on: ubuntu-latest
 
+    outputs:
+      backend_version: ${{ steps.versions.outputs.backend_version }}
+      frontend_version: ${{ steps.versions.outputs.frontend_version }}
+      backend_changed: ${{ steps.changes.outputs.backend_changed }}
+      frontend_changed: ${{ steps.changes.outputs.frontend_changed }}
+      build_backend: ${{ steps.release.outputs.build_backend }}
+      build_frontend: ${{ steps.release.outputs.build_frontend }}
+
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     needs:
@@ -73,6 +81,43 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes
+        id: changes
+        shell: bash
+        run: |
+          set -e
+
+          echo "Comparing:"
+          echo "Before: ${{ github.event.before }}"
+          echo "Current: ${{ github.sha }}"
+
+          CHANGED_FILES=$(git diff --name-only \
+            "${{ github.event.before }}" \
+            "${{ github.sha }}")
+
+          echo ""
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          echo ""
+
+          if echo "$CHANGED_FILES" | grep -q '^backend/'; then
+            echo "backend_changed=true" >> "$GITHUB_OUTPUT"
+            echo "Backend changed."
+          else
+            echo "backend_changed=false" >> "$GITHUB_OUTPUT"
+            echo "Backend did not change."
+          fi
+
+          if echo "$CHANGED_FILES" | grep -q '^frontend/'; then
+            echo "frontend_changed=true" >> "$GITHUB_OUTPUT"
+            echo "Frontend changed."
+          else
+            echo "frontend_changed=false" >> "$GITHUB_OUTPUT"
+            echo "Frontend did not change."
+          fi
 
       - name: Validate versions
         id: versions
@@ -83,40 +128,152 @@ jobs:
           BACKEND_VERSION=$(node -p "require('./backend/package.json').version")
           FRONTEND_VERSION=$(node -p "require('./frontend/package.json').version")
 
-          echo "Backend version: $BACKEND_VERSION"
-          echo "Frontend version: $FRONTEND_VERSION"
+          BACKEND_PREVIOUS_VERSION=$(git show \
+            "${{ github.event.before }}:backend/package.json" \
+            | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+
+          FRONTEND_PREVIOUS_VERSION=$(git show \
+            "${{ github.event.before }}:frontend/package.json" \
+            | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+
+          echo "Current backend version:   $BACKEND_VERSION"
+          echo "Previous backend version:  $BACKEND_PREVIOUS_VERSION"
+          echo ""
+
+          echo "Current frontend version:  $FRONTEND_VERSION"
+          echo "Previous frontend version: $FRONTEND_PREVIOUS_VERSION"
+          echo ""
 
           if [[ ! "$BACKEND_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Backend version '$BACKEND_VERSION' is not a closed version. Use MAJOR.MINOR.PATCH, for example 1.2.3."
+            echo "::error::Backend version '$BACKEND_VERSION' is not a closed version. Use MAJOR.MINOR.PATCH."
             exit 1
           fi
 
           if [[ ! "$FRONTEND_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Frontend version '$FRONTEND_VERSION' is not a closed version. Use MAJOR.MINOR.PATCH, for example 1.2.3."
+            echo "::error::Frontend version '$FRONTEND_VERSION' is not a closed version. Use MAJOR.MINOR.PATCH."
             exit 1
           fi
 
           echo "backend_version=$BACKEND_VERSION" >> "$GITHUB_OUTPUT"
           echo "frontend_version=$FRONTEND_VERSION" >> "$GITHUB_OUTPUT"
 
+          echo "backend_previous_version=$BACKEND_PREVIOUS_VERSION" >> "$GITHUB_OUTPUT"
+          echo "frontend_previous_version=$FRONTEND_PREVIOUS_VERSION" >> "$GITHUB_OUTPUT"
+
           echo "Version validation passed."
 
+      - name: Validate release
+        id: release
+        shell: bash
+        env:
+          BACKEND_CHANGED: ${{ steps.changes.outputs.backend_changed }}
+          FRONTEND_CHANGED: ${{ steps.changes.outputs.frontend_changed }}
+
+          BACKEND_VERSION: ${{ steps.versions.outputs.backend_version }}
+          FRONTEND_VERSION: ${{ steps.versions.outputs.frontend_version }}
+
+          BACKEND_PREVIOUS_VERSION: ${{ steps.versions.outputs.backend_previous_version }}
+          FRONTEND_PREVIOUS_VERSION: ${{ steps.versions.outputs.frontend_previous_version }}
+        run: |
+          set -e
+
+          BUILD_BACKEND=false
+          BUILD_FRONTEND=false
+
+          echo "========================================"
+          echo "Backend"
+          echo "========================================"
+
+          echo "Changed:          $BACKEND_CHANGED"
+          echo "Previous version: $BACKEND_PREVIOUS_VERSION"
+          echo "Current version:  $BACKEND_VERSION"
+
+          if [[ "$BACKEND_CHANGED" == "true" ]]; then
+            if [[ "$BACKEND_VERSION" == "$BACKEND_PREVIOUS_VERSION" ]]; then
+              echo "::error::Backend code changed, but version remained $BACKEND_VERSION."
+              echo "::error::Increment backend/package.json version before publishing."
+              exit 1
+            fi
+
+            echo "Backend code changed and version changed."
+            echo "Backend will be built."
+
+            BUILD_BACKEND=true
+
+          else
+            if [[ "$BACKEND_VERSION" == "$BACKEND_PREVIOUS_VERSION" ]]; then
+              echo "Backend code and version did not change."
+              echo "Backend will be skipped."
+
+            else
+              echo "Backend version changed without code changes."
+              echo "Backend will be built."
+
+              BUILD_BACKEND=true
+            fi
+          fi
+
+          echo ""
+          echo "========================================"
+          echo "Frontend"
+          echo "========================================"
+
+          echo "Changed:          $FRONTEND_CHANGED"
+          echo "Previous version: $FRONTEND_PREVIOUS_VERSION"
+          echo "Current version:  $FRONTEND_VERSION"
+
+          if [[ "$FRONTEND_CHANGED" == "true" ]]; then
+            if [[ "$FRONTEND_VERSION" == "$FRONTEND_PREVIOUS_VERSION" ]]; then
+              echo "::error::Frontend code changed, but version remained $FRONTEND_VERSION."
+              echo "::error::Increment frontend/package.json version before publishing."
+              exit 1
+            fi
+
+            echo "Frontend code changed and version changed."
+            echo "Frontend will be built."
+
+            BUILD_FRONTEND=true
+
+          else
+            if [[ "$FRONTEND_VERSION" == "$FRONTEND_PREVIOUS_VERSION" ]]; then
+              echo "Frontend code and version did not change."
+              echo "Frontend will be skipped."
+
+            else
+              echo "Frontend version changed without code changes."
+              echo "Frontend will be built."
+
+              BUILD_FRONTEND=true
+            fi
+          fi
+
+          echo ""
+          echo "========================================"
+          echo "Release decision"
+          echo "========================================"
+
+          echo "Build backend:  $BUILD_BACKEND"
+          echo "Build frontend: $BUILD_FRONTEND"
+
+          echo "build_backend=$BUILD_BACKEND" >> "$GITHUB_OUTPUT"
+          echo "build_frontend=$BUILD_FRONTEND" >> "$GITHUB_OUTPUT"
+
       - name: Login to GHCR
+        if: steps.release.outputs.build_backend == 'true' || steps.release.outputs.build_frontend == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check if versions already exist
+      - name: Check if backend version already exists
+        if: steps.release.outputs.build_backend == 'true'
         env:
           BACKEND_VERSION: ${{ steps.versions.outputs.backend_version }}
-          FRONTEND_VERSION: ${{ steps.versions.outputs.frontend_version }}
         run: |
           set -e
 
           BACKEND_IMAGE="ghcr.io/${{ github.repository_owner }}/architecture-study-backend"
-          FRONTEND_IMAGE="ghcr.io/${{ github.repository_owner }}/architecture-study-frontend"
 
           echo "Checking backend image..."
 
@@ -127,6 +284,14 @@ jobs:
 
           echo "Backend version $BACKEND_VERSION is available."
 
+      - name: Check if frontend version already exists
+        if: steps.release.outputs.build_frontend == 'true'
+        env:
+          FRONTEND_VERSION: ${{ steps.versions.outputs.frontend_version }}
+        run: |
+          set -e
+
+          FRONTEND_IMAGE="ghcr.io/${{ github.repository_owner }}/architecture-study-frontend"
 
           echo "Checking frontend image..."
 
@@ -138,6 +303,7 @@ jobs:
           echo "Frontend version $FRONTEND_VERSION is available."
 
       - name: Build backend image
+        if: steps.release.outputs.build_backend == 'true'
         env:
           BACKEND_VERSION: ${{ steps.versions.outputs.backend_version }}
         run: |
@@ -147,6 +313,7 @@ jobs:
             ./backend
 
       - name: Build frontend image
+        if: steps.release.outputs.build_frontend == 'true'
         env:
           FRONTEND_VERSION: ${{ steps.versions.outputs.frontend_version }}
         run: |
@@ -156,6 +323,7 @@ jobs:
             ./frontend
 
       - name: Push backend image
+        if: steps.release.outputs.build_backend == 'true'
         env:
           BACKEND_VERSION: ${{ steps.versions.outputs.backend_version }}
         run: |
@@ -166,6 +334,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/architecture-study-backend:latest
 
       - name: Push frontend image
+        if: steps.release.outputs.build_frontend == 'true'
         env:
           FRONTEND_VERSION: ${{ steps.versions.outputs.frontend_version }}
         run: |
@@ -187,21 +356,63 @@ jobs:
     steps:
       - name: Deploy
         uses: appleboy/ssh-action@v1.2.2
+        env:
+          BACKEND_VERSION: ${{ needs.docker.outputs.backend_version }}
+          FRONTEND_VERSION: ${{ needs.docker.outputs.frontend_version }}
+          BUILD_BACKEND: ${{ needs.docker.outputs.build_backend }}
+          BUILD_FRONTEND: ${{ needs.docker.outputs.build_frontend }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          envs: BACKEND_VERSION,FRONTEND_VERSION,BUILD_BACKEND,BUILD_FRONTEND
 
           script: |
             set -e
 
             cd /opt/architecture-study
 
-            docker compose \
-              -f docker-compose.prod.yml \
-              pull frontend backend
+            echo "Backend version:  ${BACKEND_VERSION}"
+            echo "Frontend version: ${FRONTEND_VERSION}"
 
-            docker compose \
-              -f docker-compose.prod.yml \
-              up -d frontend backend
+            echo "Build backend:    ${BUILD_BACKEND}"
+            echo "Build frontend:   ${BUILD_FRONTEND}"
+
+            if [[ "$BUILD_BACKEND" == "true" ]]; then
+              if ! grep -q '^BACKEND_VERSION=' .env; then
+                echo "ERROR: BACKEND_VERSION not found in .env"
+                exit 1
+              fi
+
+              sed -i "s/^BACKEND_VERSION=.*/BACKEND_VERSION=${BACKEND_VERSION}/" .env
+
+              docker compose \
+                -f docker-compose.prod.yml \
+                pull backend
+
+              docker compose \
+                -f docker-compose.prod.yml \
+                up -d backend
+            fi
+
+            if [[ "$BUILD_FRONTEND" == "true" ]]; then
+              if ! grep -q '^FRONTEND_VERSION=' .env; then
+                echo "ERROR: FRONTEND_VERSION not found in .env"
+                exit 1
+              fi
+
+              sed -i "s/^FRONTEND_VERSION=.*/FRONTEND_VERSION=${FRONTEND_VERSION}/" .env
+
+              docker compose \
+                -f docker-compose.prod.yml \
+                pull frontend
+
+              docker compose \
+                -f docker-compose.prod.yml \
+                up -d frontend
+            fi
+
+            echo ""
+            echo "Current production versions:"
+            grep -E '^(BACKEND_VERSION|FRONTEND_VERSION)=' .env

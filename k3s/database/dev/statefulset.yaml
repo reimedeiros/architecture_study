@@ -32,16 +32,28 @@ spec:
 
           env:
             - name: MYSQL_DATABASE
-              value: architecture_study
+              valueFrom:
+                secretKeyRef:
+                  name: database-credentials
+                  key: MYSQL_DATABASE
 
             - name: MYSQL_USER
-              value: architecture_study
+              valueFrom:
+                secretKeyRef:
+                  name: database-credentials
+                  key: MYSQL_USER
 
             - name: MYSQL_PASSWORD
-              value: CHANGE_ME
+              valueFrom:
+                secretKeyRef:
+                  name: database-credentials
+                  key: MYSQL_PASSWORD
 
             - name: MYSQL_ROOT_PASSWORD
-              value: CHANGE_ME_ROOT
+              valueFrom:
+                secretKeyRef:
+                  name: database-credentials
+                  key: MYSQL_ROOT_PASSWORD
 
           resources:
             requests:

@@ -76,6 +76,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read versions
+        id: versions
+        run: |
+          BACKEND_VERSION=$(node -p "require('./backend/package.json').version")
+          FRONTEND_VERSION=$(node -p "require('./frontend/package.json').version")
+
+          echo "Backend version: $BACKEND_VERSION"
+          echo "Frontend version: $FRONTEND_VERSION"
+
+          echo "backend_version=$BACKEND_VERSION" >> "$GITHUB_OUTPUT"
+          echo "frontend_version=$FRONTEND_VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -83,32 +95,62 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check if versions already exist
+        env:
+          BACKEND_VERSION: ${{ steps.versions.outputs.backend_version }}
+          FRONTEND_VERSION: ${{ steps.versions.outputs.frontend_version }}
+        run: |
+          BACKEND_IMAGE="ghcr.io/${{ github.repository_owner }}/architecture-study-backend"
+          FRONTEND_IMAGE="ghcr.io/${{ github.repository_owner }}/architecture-study-frontend"
+
+          echo "Checking backend image..."
+          if docker manifest inspect "$BACKEND_IMAGE:$BACKEND_VERSION" > /dev/null 2>&1; then
+            echo "::error::Backend image version $BACKEND_VERSION already exists: $BACKEND_IMAGE:$BACKEND_VERSION"
+            exit 1
+          fi
+
+          echo "Checking frontend image..."
+          if docker manifest inspect "$FRONTEND_IMAGE:$FRONTEND_VERSION" > /dev/null 2>&1; then
+            echo "::error::Frontend image version $FRONTEND_VERSION already exists: $FRONTEND_IMAGE:$FRONTEND_VERSION"
+            exit 1
+          fi
+
+          echo "Versions are available."
+
       - name: Build backend image
+        env:
+          BACKEND_VERSION: ${{ steps.versions.outputs.backend_version }}
         run: |
           docker build \
-            -t ghcr.io/${{ github.repository_owner }}/architecture-study-backend:${{ github.sha }} \
+            -t ghcr.io/${{ github.repository_owner }}/architecture-study-backend:$BACKEND_VERSION \
             -t ghcr.io/${{ github.repository_owner }}/architecture-study-backend:latest \
             ./backend
 
       - name: Push backend image
+        env:
+          BACKEND_VERSION: ${{ steps.versions.outputs.backend_version }}
         run: |
           docker push \
-            ghcr.io/${{ github.repository_owner }}/architecture-study-backend:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/architecture-study-backend:$BACKEND_VERSION
 
           docker push \
             ghcr.io/${{ github.repository_owner }}/architecture-study-backend:latest
 
       - name: Build frontend image
+        env:
+          FRONTEND_VERSION: ${{ steps.versions.outputs.frontend_version }}
         run: |
           docker build \
-            -t ghcr.io/${{ github.repository_owner }}/architecture-study-frontend:${{ github.sha }} \
+            -t ghcr.io/${{ github.repository_owner }}/architecture-study-frontend:$FRONTEND_VERSION \
             -t ghcr.io/${{ github.repository_owner }}/architecture-study-frontend:latest \
             ./frontend
 
       - name: Push frontend image
+        env:
+          FRONTEND_VERSION: ${{ steps.versions.outputs.frontend_version }}
         run: |
           docker push \
-            ghcr.io/${{ github.repository_owner }}/architecture-study-frontend:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/architecture-study-frontend:$FRONTEND_VERSION
 
           docker push \
             ghcr.io/${{ github.repository_owner }}/architecture-study-frontend:latest

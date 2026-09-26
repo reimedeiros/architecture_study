@@ -25,6 +25,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -50,6 +52,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -68,6 +72,8 @@ jobs:
     name: Docker Build
     runs-on: ubuntu-latest
 
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
     needs:
       - backend
       - frontend
@@ -76,17 +82,72 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Read versions
+      - name: Validate versions
         id: versions
+        shell: bash
         run: |
+          set -e
+
           BACKEND_VERSION=$(node -p "require('./backend/package.json').version")
           FRONTEND_VERSION=$(node -p "require('./frontend/package.json').version")
 
-          echo "Backend version: $BACKEND_VERSION"
-          echo "Frontend version: $FRONTEND_VERSION"
+          PREVIOUS_BACKEND_VERSION=$(git show HEAD^:backend/package.json | node -e "
+            let data = '';
+            process.stdin.on('data', chunk => data += chunk);
+            process.stdin.on('end', () => console.log(JSON.parse(data).version));
+          ")
+
+          PREVIOUS_FRONTEND_VERSION=$(git show HEAD^:frontend/package.json | node -e "
+            let data = '';
+            process.stdin.on('data', chunk => data += chunk);
+            process.stdin.on('end', () => console.log(JSON.parse(data).version));
+          ")
+
+          echo "Backend:"
+          echo "  Previous: $PREVIOUS_BACKEND_VERSION"
+          echo "  Current:  $BACKEND_VERSION"
+
+          echo "Frontend:"
+          echo "  Previous: $PREVIOUS_FRONTEND_VERSION"
+          echo "  Current:  $FRONTEND_VERSION"
+
+          # -----------------------------------------
+          # Validar formato MAJOR.MINOR.PATCH
+          # -----------------------------------------
+
+          if [[ ! "$BACKEND_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Backend version '$BACKEND_VERSION' is not a closed version. Use MAJOR.MINOR.PATCH, for example 1.2.3."
+            exit 1
+          fi
+
+          if [[ ! "$FRONTEND_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Frontend version '$FRONTEND_VERSION' is not a closed version. Use MAJOR.MINOR.PATCH, for example 1.2.3."
+            exit 1
+          fi
+
+          # -----------------------------------------
+          # Verificar se as versões foram alteradas
+          # -----------------------------------------
+
+          if [[ "$BACKEND_VERSION" == "$PREVIOUS_BACKEND_VERSION" ]]; then
+            echo "::error::Backend version was not changed. Current version: $BACKEND_VERSION"
+            exit 1
+          fi
+
+          if [[ "$FRONTEND_VERSION" == "$PREVIOUS_FRONTEND_VERSION" ]]; then
+            echo "::error::Frontend version was not changed. Current version: $FRONTEND_VERSION"
+            exit 1
+          fi
+
+          # -----------------------------------------
+          # Exportar versões
+          # -----------------------------------------
 
           echo "backend_version=$BACKEND_VERSION" >> "$GITHUB_OUTPUT"
+
           echo "frontend_version=$FRONTEND_VERSION" >> "$GITHUB_OUTPUT"
+
+          echo "Version validation passed."
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -158,6 +219,8 @@ jobs:
   deploy:
     name: Deploy VPS
     runs-on: ubuntu-latest
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     needs:
       - docker
